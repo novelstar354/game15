@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ルーレット</title>
+<style>
+body { font-family:sans-serif; background:#0b0b0b; color:#fff; text-align:center; margin:0; }
+h1 { color:#ffcc00; margin:20px 0; }
+#rouletteContainer { position: relative; width: 450px; height: 450px; margin: 20px auto; perspective:1000px; }
+#roulette { width:100%; height:100%; border-radius:50%; background: conic-gradient(#ff0000 0deg 180deg, #000 180deg 360deg); transform-style: preserve-3d; box-shadow:0 10px 30px rgba(0,0,0,0.8); }
+#ball { position:absolute; width:25px; height:25px; border-radius:50%; background:gold; top:50%; left:50%; transform-origin:-200px center; box-shadow: 0 0 15px rgba(255,255,0,0.8), inset 0 0 5px rgba(255,255,255,0.8);}
+.bet-section { margin:15px 0; }
+.bet-list { margin:5px 0; }
+input, select { padding:5px; font-size:14px; text-align:center; margin:0 2px;}
+button { padding:5px 10px; margin:3px; font-size:14px; border-radius:5px; border:none; cursor:pointer; }
+.result { margin:10px; font-size:18px; min-height:24px; }
+.history { max-height:150px; overflow-y:auto; margin:10px; background:#111; padding:5px; border-radius:5px; text-align:left; font-size:14px;}
+.red { color:red; } .black { color:black; } .green { color:lime; }
+</style>
+</head>
+<body>
+<h1>ルーレット</h1>
+<p>所持金: <span id="money">1000</span>円</p>
+
+<div class="bet-section" id="betSection">
+  <div class="bet-list">
+    <input type="number" placeholder="金額" class="betAmount">
+    <select class="betType">
+      <option value="color">色ベット</option>
+      <option value="number">数字ベット</option>
+      <option value="evenodd">偶数/奇数</option>
+      <option value="half">1-18 / 19-36</option>
+      <option value="dozen">ダズン</option>
+    </select>
+    <input type="text" placeholder="赤/黒/0 など" class="betChoice">
+  </div>
+  <button onclick="addBet()">＋ベット追加</button>
+  <button onclick="placeBets()">ベット実行</button>
+</div>
+
+<div id="rouletteContainer">
+  <div id="roulette"></div>
+  <div id="ball"></div>
+</div>
+
+<div class="result" id="result"></div>
+<div class="history" id="history"></div>
+
+<!-- 音素材 -->
+<audio id="bounceAudio" src="https://www.soundjay.com/button/beep-07.mp3"></audio>
+<audio id="stopAudio" src="https://www.soundjay.com/button/beep-10.mp3"></audio>
+<audio id="winAudio" src="https://www.soundjay.com/button/button-3.mp3"></audio>
+
+<script>
+let money=1000;
+let rouletteDiv=document.getElementById('roulette');
+let ballDiv=document.getElementById('ball');
+let historyDiv=document.getElementById('history');
+let bounceAudio=document.getElementById('bounceAudio');
+let stopAudio=document.getElementById('stopAudio');
+let winAudio=document.getElementById('winAudio');
+
+const numbers=Array.from({length:37},(_,i)=>i);
+const colors=numbers.map(n=>n===0?'緑':n%2===0?'黒':'赤');
+
+function addBet(){
+  let betList=document.createElement('div');
+  betList.className='bet-list';
+  betList.innerHTML=`<input type="number" placeholder="金額" class="betAmount">
+    <select class="betType">
+      <option value="color">色ベット</option>
+      <option value="number">数字ベット</option>
+      <option value="evenodd">偶数/奇数</option>
+      <option value="half">1-18 / 19-36</option>
+      <option value="dozen">ダズン</option>
+    </select>
+    <input type="text" placeholder="赤/黒/0 など" class="betChoice">`;
+  document.getElementById('betSection').insertBefore(betList, document.querySelector('#betSection button:nth-child(2)'));
+}
+
+function getRouletteResult(){
+  let idx=Math.floor(Math.random()*37);
+  return {num:numbers[idx], color:colors[idx], index:idx};
+}
+
+function placeBets(){
+  let betLists=document.querySelectorAll('.bet-list');
+  let totalBet=0;
+  let bets=[];
+  betLists.forEach(bl=>{
+    let amount=parseInt(bl.querySelector('.betAmount').value);
+    let type=bl.querySelector('.betType').value;
+    let choice=bl.querySelector('.betChoice').value.trim();
+    if(amount>0) { totalBet+=amount; bets.push({amount,type,choice}); }
+  });
+  if(totalBet>money){ alert("所持金が足りません"); return; }
+  if(totalBet<=0){ alert("ベット金額を入力してください"); return; }
+
+  money-=totalBet; document.getElementById('money').textContent=money;
+  document.getElementById('result').textContent="回転中... 🎡";
+
+  let result=getRouletteResult();
+
+  let totalAngle = 360*5 + (result.index*(360/37));
+  let currentAngle=0;
+  let speed=40;
+
+  let interval=setInterval(()=>{
+    currentAngle+=speed;
+    speed*=0.95;
+    // 玉跳ねる音ランダム
+    if(Math.random()<0.05) bounceAudio.play();
+    // 玉の影調整で立体感
+    let scale=1+Math.sin(currentAngle*Math.PI/180)*0.05;
+    ballDiv.style.transform=`rotate(${currentAngle}deg) translateX(-200px) scale(${scale})`;
+    if(speed<0.1){
+      currentAngle=totalAngle; clearInterval(interval);
+      stopAudio.play();
+      showResult(result,bets,totalBet);
+    }
+  },20);
+}
+
+function showResult(result,bets,totalBet){
+  ballDiv.style.display="none";
+  rouletteDiv.textContent=`${result.color} (${result.num})`;
+
+  let totalWin=0;
+  bets.forEach(b=>{
+    let win=false,payout=0;
+    if(b.type==='color' && b.choice===result.color){win=true;payout=b.amount*2;}
+    else if(b.type==='number' && parseInt(b.choice)===result.num){win=true;payout=b.amount*35;}
+    else if(b.type==='evenodd' && ((b.choice==='偶数' && result.num!==0 && result.num%2===0) || (b.choice==='奇数' && result.num%2===1))){win=true;payout=b.amount*2;}
+    else if(b.type==='half' && ((b.choice==='1-18' && result.num>=1&&result.num<=18) || (b.choice==='19-36' && result.num>=19&&result.num<=36))){win=true;payout=b.amount*2;}
+    else if(b.type==='dozen' && ((b.choice==='1-12' && result.num>=1&&result.num<=12)||(b.choice==='13-24' && result.num>=13&&result.num<=24)||(b.choice==='25-36' && result.num>=25&&result.num<=36))){win=true;payout=b.amount*3;}
+    totalWin+=win?payout:0;
+  });
+
+  money+=totalWin; document.getElementById('money').textContent=money;
+  if(totalWin>0){ document.getElementById('result').innerHTML=`<span class="green">当たり！ +${totalWin}円</span>`; winAudio.play();}
+  else{ document.getElementById('result').innerHTML=`<span class="red">外れ... -${totalBet}円</span>`; }
+
+  let entry=document.createElement('div');
+  entry.textContent=`出目: ${result.num} (${result.color}) - ${totalWin>0?'当たり':'外れ'}`;
+  historyDiv.prepend(entry);
+
+  if(money<=0){ alert("所持金がなくなりました。ゲームオーバー！"); }
+}
+</script>
+</body>
+</html>
